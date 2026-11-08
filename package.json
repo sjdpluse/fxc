@@ -1,0 +1,14 @@
+{
+  "name": "fxc-trading-calendar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An English trading journal with a profit and loss calendar.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "node --check src/app.js && node --check src/domain.js && node --check src/storage.js"
+  }
+}
