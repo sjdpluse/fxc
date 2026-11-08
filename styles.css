@@ -227,6 +227,27 @@ h1 { font-size: 31px; line-height: 1.25; }
 .demo-banner strong { color: var(--mint); font-weight: 600; margin-right: 10px; }
 .demo-banner .text-button { color: var(--mint); }
 .recovery-banner { border: 1px solid #9c6473; padding: 14px; border-radius: 8px; margin-bottom: 20px; color: #efb6c1; font-size: 12px; display: flex; gap: 15px; align-items: center; }
+.cloud-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; margin-bottom: 24px; border: 1px solid #304a4a; border-radius: 9px; background: #14272b; }
+.cloud-banner strong { color: #b6dfd2; font-size: 11px; font-weight: 500; }
+.cloud-banner p { font-size: 10px; color: #8aa9aa; margin-top: 3px; line-height: 1.65; }
+.cloud-banner.error { border-color: #8f5c69; background: #32232e; }
+.cloud-banner.error p { color: #d2a1b1; }
+.cloud-banner.error strong { color: #fac2cc; }
+.local-status.busy i { background: #e4bc7e; }
+.auth-tabs { display: flex; border-bottom: 1px solid var(--border); margin: 0 0 21px; }
+.auth-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 14px; color: #849bb6; font-size: 12px; }
+.auth-tab.active { color: var(--mint); border-bottom-color: var(--mint); }
+.auth-fields { display: grid; gap: 17px; }
+.auth-forgot { margin-top: 15px; }
+.account-message { color: #b7e4d2; background: #1b352e; border: 1px solid #3e6354; padding: 12px; border-radius: 7px; font-size: 11px; margin-top: 18px; line-height: 1.7; }
+.email-link-help { border-top: 1px solid var(--border); margin-top: 22px; padding-top: 16px; color: #8da4bd; font-size: 10px; }
+.email-link-help summary { cursor: pointer; }
+.email-link-help p { margin: 12px 0; line-height: 1.7; }
+.email-link-help form .button { margin-top: 12px; }
+.local-migration { background: #1a2a3e; border: 1px solid #344d6b; border-radius: 8px; padding: 15px; }
+.local-migration p { font-size: 12px; color: #bbcee0; margin-bottom: 12px; }
+.local-migration small { display: block; color: #7f9ab5; font-size: 10px; margin-top: 12px; line-height: 1.7; }
+.modal strong { overflow-wrap: anywhere; }
 .page-footer { margin-top: 24px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #5e718b; gap: 10px; }
 .page-footer > span .muted { padding: 0 5px; }
 .page-footer .text-button { font-size: 10px; }
@@ -379,6 +400,11 @@ textarea { resize: vertical; }
   .topbar { height: 43px; padding: 0 16px; }
   .breadcrumb { font-size: 9px; gap: 7px; }
   .topbar-right { gap: 10px; }
+  .topbar-right #account-button { font-size: 8px; padding: 4px 7px; }
+  .cloud-banner { margin-bottom: 20px; padding: 11px; gap: 9px; }
+  .cloud-banner strong { font-size: 10px; }
+  .cloud-banner p { font-size: 8px; }
+  .cloud-banner .button { font-size: 9px; }
   .local-status { font-size: 8px; gap: 5px; }
   .currency-badge { padding: 2px 4px; font-size: 8px; }
   .page-content { padding: 23px 13px 20px; }

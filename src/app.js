@@ -1,5 +1,7 @@
-import { MAX_TRADES, createTradeId, dailyTotals, demoJournal, isDateKey, monthGrid, netOf, parseMoney, shiftMonth, summarize, todayKey, validateJournal } from './domain.js';
+import { MAX_TRADES, createTradeId, dailyTotals, demoJournal, isDateKey, monthGrid, netOf, newJournal, parseMoney, shiftMonth, summarize, todayKey, validateJournal } from './domain.js';
 import { STORAGE_KEY, loadJournal, mergeJournals, saveJournal } from './storage.js';
+import { cloudClient, parseEmailLink } from './cloud.js';
+import { CloudJournalStore } from './cloud-store.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -16,6 +18,7 @@ const displayDate = (key, options) => new Intl.DateTimeFormat('en-US', { ...opti
 const initial = loadJournal();
 let journal = initial.journal;
 let writable = initial.writable;
+let recoveryError = initial.error;
 let snapshot;
 try { snapshot = localStorage.getItem(STORAGE_KEY); } catch { snapshot = undefined; }
 let demo = null;
@@ -27,6 +30,15 @@ let importJournal = null;
 let importSequence = 0;
 let page = 0;
 let toastTimer;
+const cloudStore = new CloudJournalStore(cloudClient);
+let authUser = null;
+let authReady = false;
+let cloudLoading = false;
+let cloudError = '';
+let saving = false;
+let authMode = 'signin';
+let authBusy = false;
+let recoveryMode = false;
 const PAGE_SIZE = 25;
 const active = () => demo || journal;
 
@@ -38,9 +50,21 @@ function toast(message, error = false) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, error ? 7000 : 3500);
 }
 
-function commit(next, { restore = false } = {}) {
+async function commit(next, { restore = false } = {}) {
   const validated = validateJournal(next);
   if (demo) { demo = validated; render(); return; }
+  if (!authReady) throw new Error('Checking your account. Please wait a moment.');
+  if (saving) throw new Error('A save is already in progress.');
+  if (authUser) {
+    if (cloudLoading) throw new Error('Wait for your cloud journal to load.');
+    saving = true; render();
+    try {
+      journal = await cloudStore.save(validated);
+      cloudError = ''; writable = true;
+    } catch (error) { cloudError = error.message; throw error; }
+    finally { saving = false; render(); }
+    return;
+  }
   if (!writable && !restore) throw new Error('Your saved journal needs recovery. Import a valid backup using Replace journal before saving.');
   try {
     if (snapshot !== undefined && localStorage.getItem(STORAGE_KEY) !== snapshot) throw new Error('Journal changed in another tab. Reload this page before saving.');
@@ -197,7 +221,34 @@ function render() {
   $('#export-backup').disabled = !!demo || !writable;
   $('#import-backup').disabled = !!demo;
   $('#export-csv').disabled = !!demo || !active().trades.length;
-  $('#save-status').innerHTML = `<i></i>${demo ? 'Demo journal' : !writable ? 'Recovery needed' : 'Local journal'}`;
+  renderCloudState();
+}
+
+function renderCloudState() {
+  const busy = saving || cloudLoading || !authReady;
+  const ready = demo || (authReady && !busy && (!authUser || cloudStore.revision !== null));
+  $('#save-status').innerHTML = `<i></i>${demo ? 'Demo journal' : saving ? 'Saving to cloud…' : !authReady ? 'Checking account…' : cloudLoading ? 'Loading cloud…' : authUser ? cloudError ? 'Cloud unavailable' : 'Cloud journal' : !writable ? 'Recovery needed' : 'Local journal'}`;
+  $('#save-status').classList.toggle('busy', busy);
+  $('#storage-location').textContent = demo ? 'Temporary sample data' : authUser ? 'Stored in Supabase' : 'Stored in this browser';
+  $('#account-button').textContent = authUser ? 'Account' : 'Sign in';
+  $('#account-button').disabled = !authReady || saving || cloudLoading;
+  $('#cloud-banner').hidden = !!demo;
+  $('#cloud-banner').classList.toggle('error', !!cloudError);
+  $('#cloud-title').textContent = authUser ? cloudError ? 'Cloud connection needs attention' : cloudLoading ? 'Loading your cloud journal' : 'Your journal is connected' : 'Your journal, across devices';
+  $('#cloud-message').textContent = authUser ? cloudError || `Signed in as ${authUser.email}. Changes are saved to your account. Refresh to load changes made on another device.` : 'Sign in to save trades securely in the cloud. Local trades stay on this device until you import them.';
+  $('#cloud-banner-action').textContent = authUser ? 'Refresh' : 'Sign in';
+  $('#cloud-banner-action').disabled = busy;
+  $('#recovery-banner').hidden = !!authUser || !recoveryError || writable;
+  for (const button of $$('#save-trade, #confirm-delete, #settings-form button[type="submit"]')) button.disabled = !ready;
+  $('#import-submit').disabled = !ready || !importJournal;
+  $('#sign-out').disabled = saving || cloudLoading || authBusy;
+  $('#refresh-account').disabled = busy;
+  $('#migrate-local').disabled = busy || !!demo || cloudStore.revision === null;
+  $('#import-backup').disabled = !!demo || busy;
+  $('#export-backup').disabled = !!demo || !writable || busy || (!!authUser && cloudStore.revision === null);
+  $('#export-csv').disabled = !!demo || !journal.trades.length || busy;
+  for (const field of $$('#trade-form input, #trade-form select, #trade-form textarea, #settings-form select, #import-file')) field.disabled = saving;
+  $('#privacy-description').textContent = authUser ? 'Cloud trades are stored in your account and protected by database access policies. Local trades stay separate. Keep an exported backup as an additional copy.' : 'Local trades are stored in this browser. Sign in for cloud storage and use Export backup to keep your own copy. There is no broker connection.';
 }
 
 function selectDate(date, { focus = false } = {}) {
@@ -298,7 +349,7 @@ $('#today-button').addEventListener('click', () => selectDate(todayKey(active().
 $('#trade-search').addEventListener('input', () => { page = 0; renderTradeTable(); });
 $('#trade-gross').addEventListener('input', updateNetPreview);
 $('#trade-fees').addEventListener('input', updateNetPreview);
-$('#trade-form').addEventListener('submit', (event) => {
+$('#trade-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('#trade-form-error').hidden = true;
   try {
@@ -315,16 +366,16 @@ $('#trade-form').addEventListener('submit', (event) => {
     if (!isDateKey(trade.date)) throw new Error('Choose a valid trade date between 1900 and 2100.');
     if (!/^[A-Z0-9][A-Z0-9 ./_-]{0,19}$/.test(trade.symbol)) throw new Error('Instrument must contain 1–20 letters, numbers, spaces, dots, slashes, underscores, or hyphens.');
     const trades = id ? active().trades.map((t) => t.id === id ? trade : t) : [...active().trades, trade];
-    commit({ ...active(), trades });
+    await commit({ ...active(), trades });
     selectDate(trade.date);
     $('#trade-dialog').close();
     toast(demo ? 'Demo trade updated. Changes are not saved.' : id ? 'Trade updated. Calendar recalculated.' : 'Trade saved to your journal.');
   } catch (error) { formError('#trade-form-error', error); }
 });
 
-$('#confirm-delete').addEventListener('click', () => {
+$('#confirm-delete').addEventListener('click', async () => {
   try {
-    commit({ ...active(), trades: active().trades.filter((t) => t.id !== deleteId) });
+    await commit({ ...active(), trades: active().trades.filter((t) => t.id !== deleteId) });
     $('#confirm-dialog').close(); deleteId = null;
     toast(demo ? 'Demo trade deleted. Changes are not saved.' : 'Trade deleted. Calendar recalculated.');
   } catch (error) { formError('#delete-error', error); }
@@ -368,14 +419,14 @@ $('#import-file').addEventListener('change', async (event) => {
     formError('#import-error', error instanceof SyntaxError ? new Error('The file is not valid JSON. Choose an FXC JSON backup.') : error);
   }
 });
-$('#import-form').addEventListener('submit', (event) => {
+$('#import-form').addEventListener('submit', async (event) => {
   event.preventDefault(); $('#import-error').hidden = true;
   try {
     if (!importJournal) throw new Error('Choose a valid backup first.');
     const replace = $('#import-form [name="import-mode"]:checked').value === 'replace';
     if (!writable && !replace) throw new Error('Use Replace journal to restore unreadable saved data. Download the recovery file first.');
     const result = replace ? { journal: importJournal, added: importJournal.trades.length } : mergeJournals(journal, importJournal);
-    commit(result.journal, { restore: replace });
+    await commit(result.journal, { restore: replace });
     if (result.journal.trades.length) selectDate([...result.journal.trades].sort((a, b) => b.date.localeCompare(a.date))[0].date);
     $('#import-dialog').close();
     toast(replace ? `Journal restored: ${result.added} ${result.added === 1 ? 'trade' : 'trades'}.` : `${result.added} ${result.added === 1 ? 'trade' : 'trades'} imported. ${result.unchanged} ${result.unchanged === 1 ? 'duplicate' : 'duplicates'} skipped.`);
@@ -403,10 +454,10 @@ $('#settings-button').addEventListener('click', () => {
   $('#timezone-select').value = zone; $('#settings-error').hidden = true;
   $('#settings-dialog').showModal();
 });
-$('#settings-form').addEventListener('submit', (event) => {
+$('#settings-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
-    commit({ ...active(), settings: { timeZone: $('#timezone-select').value } });
+    await commit({ ...active(), settings: { timeZone: $('#timezone-select').value } });
     $('#settings-dialog').close(); toast(demo ? 'Demo preference updated. Changes are not saved.' : 'Preferences saved.');
   } catch (error) { formError('#settings-error', error); }
 });
@@ -418,8 +469,9 @@ $('#exit-demo').addEventListener('click', () => {
 
 window.addEventListener('storage', (event) => {
   if (event.key !== STORAGE_KEY && event.key !== null) return;
+  if (authUser) return; // Local journal updates must never replace a signed-in account.
   const result = loadJournal();
-  journal = result.journal; writable = result.writable;
+  journal = result.journal; writable = result.writable; recoveryError = result.error;
   try { snapshot = localStorage.getItem(STORAGE_KEY); } catch { snapshot = undefined; }
   $('#recovery-banner').hidden = !result.error;
   $('#recovery-message').textContent = result.error || '';
@@ -433,3 +485,166 @@ window.addEventListener('resize', () => {
 });
 if (initial.error) { $('#recovery-banner').hidden = false; $('#recovery-message').textContent = initial.error; }
 render();
+
+async function refreshCloud() {
+  if (!authUser || saving || cloudLoading) return;
+  const userId = authUser.id;
+  cloudLoading = true; cloudError = ''; render();
+  try {
+    const loaded = await cloudStore.load();
+    if (authUser?.id !== userId) return;
+    journal = loaded; writable = true;
+  } catch (error) {
+    if (authUser?.id === userId) cloudError = error.message;
+  } finally {
+    if (authUser?.id === userId) { cloudLoading = false; render(); updateAccountPanel(); }
+  }
+}
+
+async function applySession(session, event = '') {
+  const user = session?.user || null;
+  if (event === 'PASSWORD_RECOVERY') recoveryMode = true;
+  if (authReady && user?.id === authUser?.id) {
+    authUser = user; renderCloudState();
+    if (recoveryMode) openAccount();
+    return;
+  }
+  authReady = true; authUser = user; cloudLoading = false; cloudError = '';
+  cloudStore.setUser(user?.id || null);
+  demo = null; page = 0;
+  for (const id of ['trade-dialog', 'confirm-dialog', 'import-dialog', 'settings-dialog']) $(`#${id}`).close();
+  $('#trade-form').reset(); $('#import-form').reset(); importJournal = null; importSequence++;
+  if (user) { journal = newJournal(); writable = true; }
+  else {
+    const loaded = loadJournal(); journal = loaded.journal; writable = loaded.writable; recoveryError = loaded.error;
+    $('#recovery-message').textContent = recoveryError || '';
+    try { snapshot = localStorage.getItem(STORAGE_KEY); } catch { snapshot = undefined; }
+    recoveryMode = false;
+  }
+  selectedDate = todayKey(journal.settings.timeZone); viewMonth = selectedDate.slice(0, 7);
+  render(); updateAccountPanel();
+  if (user) await refreshCloud();
+  if (recoveryMode) openAccount();
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  $('#auth-password-label').hidden = mode === 'reset';
+  $('#auth-password').required = mode !== 'reset';
+  $('#auth-password').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  $('#sign-in-tab').classList.toggle('active', mode === 'signin');
+  $('#sign-up-tab').classList.toggle('active', mode === 'signup');
+  $('#auth-submit').textContent = mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send recovery email' : 'Sign in';
+  $('#forgot-password').hidden = mode === 'reset';
+  $('#account-error').hidden = true; $('#account-message').hidden = true;
+  $('#account-title').textContent = mode === 'reset' ? 'Reset your password' : mode === 'signup' ? 'Create your FXC account' : 'Sign in to FXC';
+}
+
+function updateAccountPanel() {
+  $('#signed-in-panel').hidden = !authUser || recoveryMode;
+  $('#signed-out-panel').hidden = !!authUser || recoveryMode;
+  $('#new-password-form').hidden = !recoveryMode;
+  if (authUser) {
+    $('#account-title').textContent = recoveryMode ? 'Choose a new password' : 'Your cloud account';
+    $('#account-email').textContent = authUser.email;
+    const local = loadJournal();
+    $('#local-migration').hidden = !!demo || !local.writable || !local.journal.trades.length;
+    $('#local-migration-description').textContent = `${local.journal.trades.length} ${local.journal.trades.length === 1 ? 'trade is' : 'trades are'} saved locally on this device. Import them into this account when you're ready.`;
+  } else setAuthMode(authMode);
+  renderCloudState();
+}
+
+function openAccount() {
+  $('#account-error').hidden = true; $('#account-message').hidden = true;
+  updateAccountPanel();
+  if (!$('#account-dialog').open) $('#account-dialog').showModal();
+}
+
+function accountMessage(text) { $('#account-message').textContent = text; $('#account-message').hidden = false; }
+
+async function authAction(action) {
+  if (authBusy || saving || cloudLoading) return;
+  authBusy = true; $('#account-error').hidden = true; $('#account-message').hidden = true;
+  for (const button of $$('#account-dialog button:not([data-close])')) button.disabled = true;
+  try { await action(); }
+  catch (error) { formError('#account-error', error); }
+  finally {
+    authBusy = false;
+    for (const button of $$('#account-dialog button:not([data-close])')) button.disabled = false;
+    renderCloudState();
+  }
+}
+
+$('#account-button').addEventListener('click', openAccount);
+$('#cloud-banner-action').addEventListener('click', () => authUser ? refreshCloud() : openAccount());
+$('#refresh-account').addEventListener('click', refreshCloud);
+$('#sign-in-tab').addEventListener('click', () => setAuthMode('signin'));
+$('#sign-up-tab').addEventListener('click', () => setAuthMode('signup'));
+$('#forgot-password').addEventListener('click', () => setAuthMode('reset'));
+$('#auth-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  authAction(async () => {
+    const email = $('#auth-email').value.trim();
+    const password = $('#auth-password').value;
+    if (authMode === 'reset') {
+      const { error } = await cloudClient.auth.resetPasswordForEmail(email);
+      if (error) throw error;
+      accountMessage('If this account exists, check its email for a recovery link. You can paste the original link in the section below to finish here.');
+    } else if (authMode === 'signup') {
+      const { data, error } = await cloudClient.auth.signUp({ email, password });
+      if (error) throw error;
+      $('#auth-password').value = '';
+      if (data.session) { await applySession(data.session); $('#account-dialog').close(); }
+      else accountMessage('Check your email to confirm your account, then return to FXC and sign in. If the link opens a different website, paste the original email link below. Email delivery depends on this project’s configured mail service.');
+    } else {
+      const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      $('#auth-password').value = '';
+      await applySession(data.session); $('#account-dialog').close();
+      toast(cloudError ? 'Signed in. Refresh your cloud connection to load trades.' : cloudLoading ? 'Signed in. Loading your cloud journal…' : 'Signed in. Your cloud journal is ready.');
+    }
+  });
+});
+$('#email-link-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  authAction(async () => {
+    const input = parseEmailLink($('#email-verification-link').value);
+    $('#email-verification-link').value = '';
+    const { data, error } = await cloudClient.auth.verifyOtp(input);
+    if (error) throw error;
+    if (input.type === 'recovery') recoveryMode = true;
+    await applySession(data.session, input.type === 'recovery' ? 'PASSWORD_RECOVERY' : 'SIGNED_IN');
+    updateAccountPanel();
+    accountMessage(recoveryMode ? 'Recovery link verified. Choose your new password.' : 'Email verified. Your account is signed in.');
+  });
+});
+$('#new-password-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  authAction(async () => {
+    const { error } = await cloudClient.auth.updateUser({ password: $('#new-password').value });
+    if (error) throw error;
+    $('#new-password').value = ''; recoveryMode = false; updateAccountPanel();
+    accountMessage('Your password has been updated.');
+  });
+});
+$('#sign-out').addEventListener('click', () => authAction(async () => {
+  const { error } = await cloudClient.auth.signOut({ scope: 'local' });
+  if (error) throw error;
+  await applySession(null); $('#account-dialog').close();
+  toast('Signed out. You are viewing this device’s local journal.');
+}));
+$('#migrate-local').addEventListener('click', () => authAction(async () => {
+  if (!authUser || demo) throw new Error('Open your personal cloud journal first.');
+  const local = loadJournal();
+  if (!local.writable) throw new Error('The local journal could not be read. Restore a valid backup first.');
+  const merged = mergeJournals(journal, local.journal);
+  await commit(merged.journal);
+  accountMessage(`${merged.added} trades imported into your account. ${merged.unchanged} identical records skipped. The local backup remains on this device.`);
+}));
+
+// Defer work out of the auth callback to avoid blocking the SDK's session lock.
+cloudClient.auth.onAuthStateChange((event, session) => { setTimeout(() => { applySession(session, event).catch((error) => toast(error.message, true)); }, 0); });
+cloudClient.auth.getSession().then(({ data, error }) => {
+  if (error) toast('Your account session could not be restored. Sign in again to use cloud storage.', true);
+  return applySession(data?.session || null);
+}).catch((error) => { authReady = true; render(); toast(error.message, true); });

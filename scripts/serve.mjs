@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
+import './prepare.mjs';
 
 const root = resolve(process.cwd());
 const portFlag = process.argv.indexOf('--port');

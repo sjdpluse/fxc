@@ -1,6 +1,6 @@
 # FXC — Trading Calendar
 
-A responsive, English-language trading journal for recording closed trades and reviewing daily profit and loss. Built with native JavaScript modules, HTML, and CSS. No runtime dependencies, API keys, broker connection, or paid services are required.
+A responsive, English-language trading journal for recording closed trades and reviewing daily profit and loss. Built with native JavaScript modules, HTML, CSS, and the official Supabase client. Supports both a local journal and private cloud accounts.
 
 ![FXC trading calendar with clearly labeled sample data](docs/preview.jpg)
 
@@ -16,12 +16,17 @@ A responsive, English-language trading journal for recording closed trades and r
 - Separate, temporary demo workspace. Your journal starts empty; demo trades never enter your personal journal automatically.
 - Responsive desktop and mobile layouts, keyboard calendar navigation, and accessible native dialogs.
 - Default journal timezone: **Asia/Kabul**. Preferences can change how Today and new trade dates are determined. Existing dates remain as entered.
+- Email/password accounts, email confirmation, password recovery, and cloud persistence in the existing Supabase project.
+- Private per-user trade access enforced by PostgreSQL Row Level Security. Anonymous visitors cannot read or write FXC cloud records.
+- Explicit migration of this device's local trades into the signed-in account. The original local journal stays intact.
+- Transactional cloud saves with revision checks: stale devices must refresh and review their draft instead of overwriting a newer journal.
 
 ## Run locally
 
-Requires Node.js 22 or later. There are no dependencies to install.
+Requires Node.js 22 or later. Install the exact versions from the committed lockfile:
 
 ```sh
+npm ci
 npm run dev
 ```
 
@@ -35,11 +40,11 @@ npm run check
 npm run build
 ```
 
-The production build is written to `dist/`. Upload that directory to any static web host. Asset URLs are relative, so the build also supports a subdirectory such as `/fxc/`.
+The production build is written to `dist/` and includes a locally bundled Supabase client; no CDN is required. Upload that directory to any static web host. Asset URLs are relative, so the build also supports a subdirectory such as `/fxc/`.
 
 ### Vercel
 
-Import this repository into Vercel. The included `vercel.json` sets the build command to `npm run build` and the output directory to `dist`. No environment variables or database setup are needed.
+Import this repository into Vercel. The included `vercel.json` sets the build command to `npm run build`, the output directory to `dist`, and a Content Security Policy allowing this Supabase project's API. The connected project's public URL and publishable key are already configured in `src/cloud-config.js`; no service-role or secret key is included. The included FXC migrations have been applied to the configured project. For a different project, apply those migrations before using cloud storage.
 
 ### GitHub Pages
 
@@ -53,9 +58,19 @@ Instrument names are labels, not contract specifications. For example, MNQ and U
 
 ## Backups and privacy
 
-Records are stored in `localStorage` under `fxc.journal.v1`, on this browser and this website origin only. They do not sync between devices, browsers, localhost, or different deployment domains. Export a JSON backup before changing hosts or clearing browser data. CSV is intended for viewing trade history; JSON is the supported restore format.
+**Local mode:** Records remain in `localStorage` under `fxc.journal.v1`, on this browser and this website origin only. They do not sync automatically. Clearing browser data removes local records. Unreadable local data is preserved and can be downloaded as a recovery file before restoring a valid backup.
 
-There is no sign-in or server database. Anyone who can use your browser profile can access your journal. Private browsing, blocked storage, storage limits, or clearing site data can prevent persistence. Failed writes are surfaced to the user and do not apply the change. Unreadable saved data is preserved and can be downloaded as a recovery file before restoring a valid backup.
+**Cloud mode:** Click **Sign in**, create an account or use an existing Supabase email/password account, and confirm your email if required. While signed in, successful saves go to `public.fxc_trades` and `public.fxc_journals` in project `cvernmhpnsgdtegvblyc`. Signing in on another device loads that account's journal. Use **Refresh** to fetch changes made elsewhere. This is explicit refresh synchronization, not live realtime or offline write queuing.
+
+In **Account**, use **Import this device's trades** to copy the local journal into the current account. Identical entries are skipped; conflicting IDs require review. Signing out returns to the separate local journal. Demo data is never uploaded. Cloud trades are kept in page memory, not copied into the local journal. The Supabase SDK persists the account session in browser storage; signing out of FXC removes this device's session.
+
+Cloud saves are acknowledged only after the database transaction succeeds. A revision conflict or uncertain network write requires **Refresh** before retrying; forms are preserved. Concurrent edits are not silently merged. A failed cloud save is never reported as a successful local or cloud save.
+
+Anyone who can use your browser profile can access your local journal and any active account session. Keep JSON backups independently of the database; the existing project's Free plan does not include automatic database backups. CSV is intended for viewing history; JSON is the supported restore format.
+
+### Email verification and recovery
+
+The existing project's email settings and redirect URLs are preserved. After confirming an email, return to FXC to sign in. If an email link opens a different website, open **Account → Have a confirmation or recovery link?** and paste the original Supabase verification link from that email. FXC accepts only links belonging to the configured project. Recovery links lead to a new-password form. This avoids changing redirect settings shared by the project's other applications. Actual email delivery depends on the project's SMTP configuration and provider limits.
 
 Backups support up to 10,000 trades, notes of up to 2,000 characters, and trade dates from 1900 through 2100. Exported files contain your trade notes and results; keep them private. Import validates the entire file before applying any changes. A conflicting trade ID requires an explicit replacement rather than silently overwriting an edited trade.
 
@@ -63,8 +78,16 @@ Backups support up to 10,000 trades, notes of up to 2,000 characters, and trade 
 
 - `src/domain.js` — dates, exact money parsing, aggregation, validation, and sample data.
 - `src/storage.js` — persistence and safe backup merging.
+- `src/cloud-config.js` — public project configuration; never place secret keys here.
+- `src/cloud.js` — official Supabase client and email-link verification.
+- `src/cloud-store.js` — validated cloud records, concurrency protection, and account isolation in the client.
 - `src/app.js` — UI, journal actions, downloads, and calendar interactions.
 - `tests/journal.test.js` — calculation, calendar, backup, and persistence checks.
-- `scripts/` — dependency-free preview and build scripts.
+- `tests/cloud-store.test.js` — cloud failures, concurrent devices, account changes, and safe retries.
+- `tests/database-security.sql` — transactional integration assertions for RLS, validation, and concurrency. Test fixtures are rolled back.
+- `scripts/fxc-schema.sql` — reviewed source for the FXC-only database migration; it is not run on every app build.
+- `supabase/migrations/` — exact migration versions deployed to the configured project.
+- `docs/supabase-integration.md` — verification evidence, shared-project findings, and email-delivery limitations.
+- `scripts/` — preview, SDK bundling, build, and schema reference.
 
-All processing happens in the browser. No trading recommendations, market data, automated trades, or economic news are provided.
+The preview/build scripts use esbuild to bundle the pinned Supabase SDK. No trading recommendations, market data, automated trades, or economic news are provided.
