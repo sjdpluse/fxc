@@ -2,6 +2,7 @@ import { MAX_TRADES, createTradeId, dailyTotals, demoJournal, isDateKey, monthGr
 import { STORAGE_KEY, loadJournal, mergeJournals, saveJournal } from './storage.js';
 import { cloudClient, parseEmailLink } from './cloud.js';
 import { CloudJournalStore } from './cloud-store.js';
+import { createInstaller } from './pwa.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -41,6 +42,7 @@ let authBusy = false;
 let recoveryMode = false;
 const PAGE_SIZE = 25;
 const active = () => demo || journal;
+const installer = createInstaller({ onChange: renderInstallState });
 
 function toast(message, error = false) {
   clearTimeout(toastTimer);
@@ -230,14 +232,15 @@ function renderCloudState() {
   $('#save-status').innerHTML = `<i></i>${demo ? 'Demo journal' : saving ? 'Saving to cloud…' : !authReady ? 'Checking account…' : cloudLoading ? 'Loading cloud…' : authUser ? cloudError ? 'Cloud unavailable' : 'Cloud journal' : !writable ? 'Recovery needed' : 'Local journal'}`;
   $('#save-status').classList.toggle('busy', busy);
   $('#storage-location').textContent = demo ? 'Temporary sample data' : authUser ? 'Stored in Supabase' : 'Stored in this browser';
-  $('#account-button').textContent = authUser ? 'Account' : 'Sign in';
+  $('#account-button').innerHTML = authUser ? icon('user') : 'Sign in';
+  $('#account-button').classList.toggle('is-profile', !!authUser);
+  $('#account-button').setAttribute('aria-label', authUser ? 'Open profile' : 'Sign in');
+  $('#account-button').title = authUser ? 'Your profile' : 'Sign in to your cloud journal';
   $('#account-button').disabled = !authReady || saving || cloudLoading;
-  $('#cloud-banner').hidden = !!demo;
-  $('#cloud-banner').classList.toggle('error', !!cloudError);
-  $('#cloud-title').textContent = authUser ? cloudError ? 'Cloud connection needs attention' : cloudLoading ? 'Loading your cloud journal' : 'Your journal is connected' : 'Your journal, across devices';
-  $('#cloud-message').textContent = authUser ? cloudError || `Signed in as ${authUser.email}. Changes are saved to your account. Refresh to load changes made on another device.` : 'Sign in to save trades securely in the cloud. Local trades stay on this device until you import them.';
-  $('#cloud-banner-action').textContent = authUser ? 'Refresh' : 'Sign in';
-  $('#cloud-banner-action').disabled = busy;
+  $('#profile-cloud-status').textContent = cloudError || (saving ? 'Saving changes…' : cloudLoading ? 'Loading your cloud journal…' : 'Your journal is up to date. Use Refresh to load changes from another device.');
+  $('#profile-cloud-status').classList.toggle('error', !!cloudError);
+  $('#save-status').title = cloudError || (authUser ? 'Changes are saved to your account. Open your profile to refresh.' : 'Sign in next to Settings to use cloud storage.');
+  $('#save-status').classList.toggle('error', !!cloudError);
   $('#recovery-banner').hidden = !!authUser || !recoveryError || writable;
   for (const button of $$('#save-trade, #confirm-delete, #settings-form button[type="submit"]')) button.disabled = !ready;
   $('#import-submit').disabled = !ready || !importJournal;
@@ -452,6 +455,7 @@ $('#settings-button').addEventListener('click', () => {
     const option = document.createElement('option'); option.value = zone; option.textContent = zone; option.dataset.custom = 'true'; $('#timezone-select').append(option);
   }
   $('#timezone-select').value = zone; $('#settings-error').hidden = true;
+  renderInstallState();
   $('#settings-dialog').showModal();
 });
 $('#settings-form').addEventListener('submit', async (event) => {
@@ -576,7 +580,6 @@ async function authAction(action) {
 }
 
 $('#account-button').addEventListener('click', openAccount);
-$('#cloud-banner-action').addEventListener('click', () => authUser ? refreshCloud() : openAccount());
 $('#refresh-account').addEventListener('click', refreshCloud);
 $('#sign-in-tab').addEventListener('click', () => setAuthMode('signin'));
 $('#sign-up-tab').addEventListener('click', () => setAuthMode('signup'));
@@ -594,8 +597,13 @@ $('#auth-form').addEventListener('submit', (event) => {
       const { data, error } = await cloudClient.auth.signUp({ email, password });
       if (error) throw error;
       $('#auth-password').value = '';
-      if (data.session) { await applySession(data.session); $('#account-dialog').close(); }
-      else accountMessage('Check your email to confirm your account, then return to FXC and sign in. If the link opens a different website, paste the original email link below. Email delivery depends on this project’s configured mail service.');
+      if (data.session) {
+        await applySession(data.session); $('#account-dialog').close();
+        toast('Account created. You are signed in.');
+      } else {
+        setAuthMode('signin');
+        accountMessage('Your account was created. Sign in to continue. If email confirmation has been enabled again for this project, check your inbox first.');
+      }
     } else {
       const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
       if (error) throw error;
@@ -648,3 +656,12 @@ cloudClient.auth.getSession().then(({ data, error }) => {
   if (error) toast('Your account session could not be restored. Sign in again to use cloud storage.', true);
   return applySession(data?.session || null);
 }).catch((error) => { authReady = true; render(); toast(error.message, true); });
+
+function renderInstallState(state = installer.state()) {
+  $('#install-app').disabled = state.installed || state.installing;
+  $('#install-app').textContent = state.installed ? 'Installed' : state.installing ? 'Installing…' : 'Install app';
+  $('#install-status').textContent = state.message || (state.installed ? 'You are using FXC as an installed app.' : 'Cloud sync needs an internet connection. Local journaling is available offline after the app has loaded once.');
+}
+$('#install-app').addEventListener('click', () => installer.install());
+if (document.readyState === 'complete') installer.register();
+else window.addEventListener('load', () => installer.register(), { once: true });

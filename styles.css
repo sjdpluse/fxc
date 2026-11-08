@@ -79,6 +79,25 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -.025em; }
 .breadcrumb span { color: #46546d; }
 .breadcrumb strong { color: #b8c4d5; font-weight: 400; }
 .topbar-right { display: flex; gap: 20px; align-items: center; }
+.account-controls { display: flex; align-items: center; gap: 8px; }
+.settings-control { width: 34px; height: 34px; color: #95a6bd; }
+.settings-control .icon { width: 18px; height: 18px; }
+.control-divider { width: 1px; height: 17px; background: #2b374c; }
+.account-control { display: inline-flex; align-items: center; justify-content: center; min-width: 55px; height: 34px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #c3d3e4; font-size: 11px; font-weight: 500; }
+.account-control:hover { color: var(--mint); background: #1a2a38; }
+.account-control.is-profile { width: 34px; min-width: 34px; padding: 0; border-radius: 50%; border-color: #38514d; background: #1a302d; color: #b0e7cf; }
+.account-control.is-profile .icon { width: 17px; height: 17px; }
+.local-status.error { color: var(--red); }
+.local-status.error i { background: var(--red); }
+.profile-cloud-status { color: #89a79f; background: #172c2a; border: 1px solid #2d4a43; border-radius: 7px; padding: 10px 12px; font-size: 11px; margin-bottom: 20px; line-height: 1.7; }
+.profile-cloud-status.error { color: #f2b7c2; background: #362630; border-color: #734958; }
+.install-card { margin-top: 24px; padding: 16px; border: 1px solid #33475d; border-radius: 9px; background: #172436; }
+.install-card-top { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+.install-symbol { display: grid; place-items: center; width: 35px; height: 40px; background: #213a3a; border: 1px solid #38534e; border-radius: 9px; color: var(--mint); flex: 0 0 auto; }
+.install-symbol .icon { width: 20px; height: 20px; }
+.install-card h3 { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+.install-card-top p { font-size: 10px; color: #8da5bf; line-height: 1.7; }
+.install-status { font-size: 10px; line-height: 1.7; color: #829ab3; margin-top: 11px; }
 .local-status { font-size: 10px; color: #9bacc0; display: flex; gap: 7px; align-items: center; }
 .local-status i { width: 5px; height: 5px; background: var(--mint); border-radius: 50%; }
 .currency-badge { color: #adbad0; font-size: 10px; background: #172132; border: 1px solid #293447; padding: 4px 7px; border-radius: 5px; }
@@ -227,12 +246,6 @@ h1 { font-size: 31px; line-height: 1.25; }
 .demo-banner strong { color: var(--mint); font-weight: 600; margin-right: 10px; }
 .demo-banner .text-button { color: var(--mint); }
 .recovery-banner { border: 1px solid #9c6473; padding: 14px; border-radius: 8px; margin-bottom: 20px; color: #efb6c1; font-size: 12px; display: flex; gap: 15px; align-items: center; }
-.cloud-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; margin-bottom: 24px; border: 1px solid #304a4a; border-radius: 9px; background: #14272b; }
-.cloud-banner strong { color: #b6dfd2; font-size: 11px; font-weight: 500; }
-.cloud-banner p { font-size: 10px; color: #8aa9aa; margin-top: 3px; line-height: 1.65; }
-.cloud-banner.error { border-color: #8f5c69; background: #32232e; }
-.cloud-banner.error p { color: #d2a1b1; }
-.cloud-banner.error strong { color: #fac2cc; }
 .local-status.busy i { background: #e4bc7e; }
 .auth-tabs { display: flex; border-bottom: 1px solid var(--border); margin: 0 0 21px; }
 .auth-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 14px; color: #849bb6; font-size: 12px; }
@@ -400,11 +413,10 @@ textarea { resize: vertical; }
   .topbar { height: 43px; padding: 0 16px; }
   .breadcrumb { font-size: 9px; gap: 7px; }
   .topbar-right { gap: 10px; }
-  .topbar-right #account-button { font-size: 8px; padding: 4px 7px; }
-  .cloud-banner { margin-bottom: 20px; padding: 11px; gap: 9px; }
-  .cloud-banner strong { font-size: 10px; }
-  .cloud-banner p { font-size: 8px; }
-  .cloud-banner .button { font-size: 9px; }
+  .account-controls { gap: 5px; }
+  .account-control { min-width: 43px; font-size: 10px; padding: 0 5px; }
+  .settings-control, .account-control.is-profile { width: 32px; min-width: 32px; height: 32px; }
+  .breadcrumb-workspace, .breadcrumb-separator { display: none; }
   .local-status { font-size: 8px; gap: 5px; }
   .currency-badge { padding: 2px 4px; font-size: 8px; }
   .page-content { padding: 23px 13px 20px; }

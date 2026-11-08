@@ -16,10 +16,18 @@ A responsive, English-language trading journal for recording closed trades and r
 - Separate, temporary demo workspace. Your journal starts empty; demo trades never enter your personal journal automatically.
 - Responsive desktop and mobile layouts, keyboard calendar navigation, and accessible native dialogs.
 - Default journal timezone: **Asia/Kabul**. Preferences can change how Today and new trade dates are determined. Existing dates remain as entered.
-- Email/password accounts, email confirmation, password recovery, and cloud persistence in the existing Supabase project.
+- Email/password accounts with immediate sign-in after signup, password recovery, and cloud persistence in the existing Supabase project.
 - Private per-user trade access enforced by PostgreSQL Row Level Security. Anonymous visitors cannot read or write FXC cloud records.
 - Explicit migration of this device's local trades into the signed-in account. The original local journal stays intact.
+- Installable Android PWA with a Settings install action, standalone app window, and offline caching of public app-shell assets only.
+- Compact Settings and Sign in controls in the header; signed-in users see a profile icon. No sign-in or connection banner covers the calendar.
 - Transactional cloud saves with revision checks: stale devices must refresh and review their draft instead of overwriting a newer journal.
+
+## Install on Android
+
+Open the deployed HTTPS site in Chrome on Android, then open **Settings → Install app**. When Chrome provides its native installation prompt, this button opens it. If the prompt is unavailable, FXC explains how to use Chrome’s menu → **Install app** or **Add to Home screen**. The app launches in a standalone window with its own FXC icon. This is a PWA installation, not an APK download or Play Store listing.
+
+The manifest, 192px/512px icons, maskable icon, and service worker are included in the production build. The worker caches only exact public app-shell URLs; it never intercepts Supabase requests, authenticated requests, query-string callbacks, or mutations. Cloud data still needs internet access. The local journal works offline after the shell is cached. Closing and reopening the app allows a waiting service-worker update to activate.
 
 ## Run locally
 
@@ -60,17 +68,17 @@ Instrument names are labels, not contract specifications. For example, MNQ and U
 
 **Local mode:** Records remain in `localStorage` under `fxc.journal.v1`, on this browser and this website origin only. They do not sync automatically. Clearing browser data removes local records. Unreadable local data is preserved and can be downloaded as a recovery file before restoring a valid backup.
 
-**Cloud mode:** Click **Sign in**, create an account or use an existing Supabase email/password account, and confirm your email if required. While signed in, successful saves go to `public.fxc_trades` and `public.fxc_journals` in project `cvernmhpnsgdtegvblyc`. Signing in on another device loads that account's journal. Use **Refresh** to fetch changes made elsewhere. This is explicit refresh synchronization, not live realtime or offline write queuing.
+**Cloud mode:** Click **Sign in** next to the Settings icon, then create an account or use an existing Supabase email/password account. The connected project has email confirmation disabled, so new accounts receive a session immediately. After signing in, the control becomes a profile icon. While signed in, successful saves go to `public.fxc_trades` and `public.fxc_journals` in project `cvernmhpnsgdtegvblyc`. Signing in on another device loads that account's journal. Use **Refresh** to fetch changes made elsewhere. This is explicit refresh synchronization, not live realtime or offline write queuing.
 
-In **Account**, use **Import this device's trades** to copy the local journal into the current account. Identical entries are skipped; conflicting IDs require review. Signing out returns to the separate local journal. Demo data is never uploaded. Cloud trades are kept in page memory, not copied into the local journal. The Supabase SDK persists the account session in browser storage; signing out of FXC removes this device's session.
+In your **Profile**, use **Import this device's trades** to copy the local journal into the current account. Identical entries are skipped; conflicting IDs require review. Signing out returns to the separate local journal. Demo data is never uploaded. Cloud trades are kept in page memory, not copied into the local journal. The Supabase SDK persists the account session in browser storage; signing out of FXC removes this device's session.
 
 Cloud saves are acknowledged only after the database transaction succeeds. A revision conflict or uncertain network write requires **Refresh** before retrying; forms are preserved. Concurrent edits are not silently merged. A failed cloud save is never reported as a successful local or cloud save.
 
 Anyone who can use your browser profile can access your local journal and any active account session. Keep JSON backups independently of the database; the existing project's Free plan does not include automatic database backups. CSV is intended for viewing history; JSON is the supported restore format.
 
-### Email verification and recovery
+### Signup and password recovery
 
-The existing project's email settings and redirect URLs are preserved. After confirming an email, return to FXC to sign in. If an email link opens a different website, open **Account → Have a confirmation or recovery link?** and paste the original Supabase verification link from that email. FXC accepts only links belonging to the configured project. Recovery links lead to a new-password form. This avoids changing redirect settings shared by the project's other applications. Actual email delivery depends on the project's SMTP configuration and provider limits.
+Email confirmation is disabled in the connected project (verified through its public Auth settings). No confirmation step is required for new signups. The signup handler accepts the returned session and immediately opens the account’s journal. The project’s existing password-recovery email settings and redirect URLs are preserved. Older confirmation links are still supported for accounts created before this setting changed. If an email link opens a different website, open **Account → Have a confirmation or recovery link?** and paste the original Supabase verification link from that email. FXC accepts only links belonging to the configured project. Recovery links lead to a new-password form. This avoids changing redirect settings shared by the project's other applications. Actual email delivery depends on the project's SMTP configuration and provider limits.
 
 Backups support up to 10,000 trades, notes of up to 2,000 characters, and trade dates from 1900 through 2100. Exported files contain your trade notes and results; keep them private. Import validates the entire file before applying any changes. A conflicting trade ID requires an explicit replacement rather than silently overwriting an edited trade.
 
@@ -88,6 +96,10 @@ Backups support up to 10,000 trades, notes of up to 2,000 characters, and trade 
 - `scripts/fxc-schema.sql` — reviewed source for the FXC-only database migration; it is not run on every app build.
 - `supabase/migrations/` — exact migration versions deployed to the configured project.
 - `docs/supabase-integration.md` — verification evidence, shared-project findings, and email-delivery limitations.
+- `src/pwa.js` — user-initiated installation and installed-state detection.
+- `src/service-worker.js` — public app-shell offline policy; the built `sw.js` is generated and ignored in source control.
+- `scripts/generate-worker.mjs` — content-hashed shell cache and exact asset list.
+- `tests/pwa.test.js` — installation lifecycle and private-request cache exclusions.
 - `scripts/` — preview, SDK bundling, build, and schema reference.
 
 The preview/build scripts use esbuild to bundle the pinned Supabase SDK. No trading recommendations, market data, automated trades, or economic news are provided.

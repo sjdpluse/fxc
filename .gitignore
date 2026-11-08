@@ -4,6 +4,7 @@ node_modules/
 .vercel/
 coverage/
 vendor/
+sw.js
 .env
 .env.*
 !.env.example

@@ -31,6 +31,6 @@ References:
 
 ## Remaining verification limits
 
-The project reports email authentication enabled, signups enabled, and email confirmation required. No real user signup, email delivery, or password-reset email was sent during implementation. Those flows depend on the project's existing SMTP configuration and delivery quotas. Browser checks covered the account form states and preserved local-journal behavior; authenticated authorization was verified at the database role layer. Cloud reads from another device use the Refresh action, not realtime subscriptions.
+The project reports email authentication enabled and signups enabled. The owner subsequently disabled email confirmation, and the public Auth settings were rechecked: emailConfirmationRequired=false. New signups are handled with the returned authenticated session, without waiting for an email. No real user signup, email delivery, or password-reset email was sent during implementation. Those flows depend on the project's existing SMTP configuration and delivery quotas. Browser checks covered the account form states and preserved local-journal behavior; authenticated authorization was verified at the database role layer. Cloud reads from another device use the Refresh action, not realtime subscriptions.
 
 Source and database integration are prepared independently of frontend hosting. Deploy the updated main branch to make the new account UI available on the public FXC website.
